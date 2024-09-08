@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "aws-sdk": "^2.1628.0",
+    "axios": "^1.7.2",
+    "dayjs": "^1.11.11",
+    "ftp": "^0.3.10",
+    "json2csv": "^6.0.0-alpha.2",
+    "jszip": "^3.10.1",
+    "lodash": "^4.17.21",
+    "pdf-lib": "^1.17.1",
+    "ssh2-sftp-client": "^10.0.3",
+    "youtube-dl": "^3.4.1"
+  }
+}

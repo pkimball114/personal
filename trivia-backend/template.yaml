@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Trivia Backend Server
+
+Globals:
+  Function:
+    Timeout: 300
+    Runtime: nodejs20.x
+    MemorySize: 1024
+
+Resources:
+  ###########################################
+  #               Lambdas                   #
+  ###########################################
+  triviaMP3Processor:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: triviaMP3Processor
+      CodeUri: trivia-api/
+      Handler: post.handler
+      Layers:
+        - !Ref triviaApiLayer
+      Environment:
+        Variables:
+          YOUTUBE_PROCESSOR_QUEUE: !Ref triviaYoutubeQueue
+      Architectures:
+        - x86_64
+      Policies:
+        - AmazonS3FullAccess
+        - AmazonSNSFullAccess
+        - AmazonSQSFullAccess
+        - AmazonDynamoDBFullAccess
+        - AmazonSSMFullAccess
+      Description: Handler for post trivia-api/post endpoint
+      Tags:
+        "development-stack": "trivia-backend"
+
+  triviaYoutubeProcessor:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: triviaYoutubeProcessor
+      CodeUri: trivia-api/
+      Handler: youtube.handler
+      Layers:
+        - !Ref triviaApiLayer
+      Architectures:
+        - x86_64
+      Policies:
+        - AmazonS3FullAccess
+        - AmazonSNSFullAccess
+        - AmazonSQSFullAccess
+        - AmazonDynamoDBFullAccess
+        - AmazonSSMFullAccess
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt triviaYoutubeQueue.Arn
+            BatchSize: 1
+      Description: Post processor for trivia app, deploy mp3 to youtube
+      Tags:
+        "development-stack": "trivia-backend"
+
+  ###########################################
+  #                 Layer                   #
+  ###########################################
+  triviaApiLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: triviaApiLayer
+      Description: Dependencies for Trivia API service
+      ContentUri: dependencies/
+      CompatibleRuntimes:
+        - nodejs20.x
+      LicenseInfo: "MIT"
+      RetentionPolicy: Retain
+
+  ###########################################
+  #                  SQS                    #
+  ###########################################
+  triviaYoutubeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: triviaYoutubeQueue
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt triviaDLQ.Arn
+        maxReceiveCount: 1
+      VisibilityTimeout: 300
+      Tags:
+        - Key: "development-stack"
+          Value: "trivia-backend"
+
+  triviaDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: triviaDLQ
+      Tags:
+        - Key: "development-stack"
+          Value: "trivia-backend"
+
+  ###########################################
+  #             API Definition              #
+  ###########################################
+  triviaBackendAPI:
+    Type: AWS::Serverless::Api
+    DependsOn:
+      - triviaApiCWLRoleArn
+      - triviaLambdaTriggerRole
+    Properties:
+      OpenApiVersion: 3.0.1
+      # AlwaysDeploy: true
+      Name: TriviaAPI
+      StageName: v1
+      # Auth: CAN ADD API KAY HERE IF NEEDED
+      Cors:
+        AllowOrigin: "'*'" # CAN SET CORS HERE IF NEEDED
+        AllowMethods: "'OPTIONS, HEAD, GET, POST, PATCH, DELETE'"
+        AllowHeaders: "'*'"
+      MethodSettings:
+        - LoggingLevel: INFO # one of ERROR/OFF/INFO
+          ResourcePath: "/*" # allows for logging on any resource
+          HttpMethod: "*" # allows for logging on any method
+      MinimumCompressionSize: 0
+      DefinitionBody:
+        openapi: "3.0"
+        info: {}
+        paths:
+          /trivia-api/:
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${triviaMP3Processor.Arn}/invocations
+                credentials: !GetAtt triviaLambdaTriggerRole.Arn
+                httpMethod: POST
+                type: aws_proxy
+              responses: {}
+      TracingEnabled: true
+      Tags:
+        Project: Trivia Backend
+        Application: Trivia Backend
+
+  ###########################################
+  #            Role Definitions             #
+  ###########################################
+  triviaApiCWLRoleArn:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt triviaCloudWatchRole.Arn
+
+  # IAM Role for API Gateway + CloudWatch Logging
+  triviaCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Action: "sts:AssumeRole"
+          Effect: Allow
+          Principal:
+            Service: apigateway.amazonaws.com
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+
+  triviaLambdaTriggerRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AllowLambdaIntegrations
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
