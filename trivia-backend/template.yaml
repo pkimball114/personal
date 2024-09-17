@@ -16,7 +16,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: triviaMP3Processor
-      CodeUri: trivia-api/
+      CodeUri: trivia-api/post
       Handler: post.handler
       Layers:
         - !Ref triviaApiLayer
@@ -39,7 +39,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: triviaYoutubeProcessor
-      CodeUri: trivia-api/
+      CodeUri: trivia-api/youtube
       Handler: youtube.handler
       Layers:
         - !Ref triviaApiLayer
